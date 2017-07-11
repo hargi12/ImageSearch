@@ -10,14 +10,20 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.support.design.widget.Snackbar
+import android.support.v4.app.ActivityCompat.startActivityForResult
 import android.support.v4.content.FileProvider
 import android.support.v7.app.AlertDialog
 import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.Toast
+import com.google.android.gms.tasks.OnCompleteListener
 import com.google.android.gms.tasks.OnFailureListener
 import com.google.android.gms.tasks.OnSuccessListener
+import com.google.firebase.auth.AuthResult
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageReference
 import com.google.firebase.storage.UploadTask
@@ -28,6 +34,8 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
     var mStorageRef: StorageReference? = null
+    var mAuth: FirebaseAuth? = null
+
     val GALLERY_PERMISSIONS_REQUEST = 0
     val GALLERY_IMAGE_REQUEST = 1
     val CAMERA_PERMISSIONS_REQUEST = 2
@@ -40,6 +48,7 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
 
         mStorageRef = FirebaseStorage.getInstance().reference
+        mAuth = FirebaseAuth.getInstance()
 
 
         fab.setOnClickListener { view ->
@@ -81,32 +90,37 @@ class MainActivity : AppCompatActivity() {
 
     fun searchImage(imgPath : String) {
         var base_url : String  = "https://www.google.com/searchbyimage?site=search&sa=X&image_url="
-        base_url += "http://storage.googleapis.com/avid-toolbox-5658/"
+        //base_url += "http://storage.googleapis.com/imagesearch-9b5e7.appspot.com" //"http://storage.googleapis.com/avid-toolbox-5658/"
 
         val uri = Uri.parse(base_url + imgPath)
         var i : Intent = Intent(Intent.ACTION_VIEW, uri)
         startActivity(i);
     }
 
-    fun uploadImg(bitmap: Bitmap, imgName: String) {
+    fun uploadImage(uri : Uri, imgName: String) {
+        var bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), uri)
         var byteStream : ByteArrayOutputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, byteStream)
 
-        var riversRef : StorageReference  = mStorageRef!!.child("images/$imgName")
+        var riversRef : StorageReference  = mStorageRef!!.child("avid-toolbox-5658/$imgName")
         riversRef.putBytes( byteStream.toByteArray() )
-                .addOnSuccessListener( OnSuccessListener<UploadTask.TaskSnapshot>() {
-                    fun onSuccess(taskSnapshot : UploadTask.TaskSnapshot) {
-                        // Get a URL to the uploaded content
-                        var downloadUrl : Uri? = taskSnapshot.getDownloadUrl()
-                    }
+                .addOnProgressListener( {taskSnapshot: UploadTask.TaskSnapshot ->
+                    //Toast.makeText(applicationContext, "Updating", Toast.LENGTH_LONG).show()
                 })
-                .addOnFailureListener(OnFailureListener() {
-                    fun onFailure(exception : Exception) {
+                .addOnSuccessListener( {taskSnapshot : UploadTask.TaskSnapshot ->
+                        // Get a URL to the uploaded content
+                    taskSnapshot.metadata!!.downloadUrl
+                        var downloadUrl : Uri? = taskSnapshot.getDownloadUrl()
+                        Log.i("KEVIN", downloadUrl.toString())
+                        Log.i("KEVIN", taskSnapshot.metadata!!.downloadUrl.toString())
+                        Toast.makeText(applicationContext, "Upload worked", Toast.LENGTH_LONG).show()
+                        searchImage(downloadUrl.toString())
+                })
+                .addOnFailureListener({exception : Exception ->
                         // Handle unsuccessful uploads
                         // ...
-                    }
-                });
-
+                        Toast.makeText(applicationContext, "Upload failed", Toast.LENGTH_LONG).show()
+                })
     }
 
     fun startGalleryChooser() {
@@ -140,14 +154,34 @@ class MainActivity : AppCompatActivity() {
         return File(dir, FILE_NAME)
     }
 
+    public override fun onStart() {
+        super.onStart()
+        // Check if user is signed in (non-null) and update UI accordingly.
+        val currentUser = mAuth!!.getCurrentUser()
+        mAuth!!.signInAnonymously().addOnSuccessListener(this, OnSuccessListener<AuthResult>() {
+
+            fun onSuccess(authResult : AuthResult) {
+                // do your stuff
+            }
+        })
+        .addOnFailureListener(this, OnFailureListener() {
+
+            fun onFailure( exception: Exception) {
+                Log.e("TAG", "signInAnonymously:FAILURE", exception);
+            }
+        });
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == GALLERY_IMAGE_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
-            //uploadImage(data.data)
+            uploadImage(data.data, data.data.path)
+            data.data.path
         } else if (requestCode == CAMERA_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
             val photoUri = FileProvider.getUriForFile(this, applicationContext.packageName + ".provider", getCameraFile())
-            //uploadImage(photoUri)
+            uploadImage(photoUri, photoUri.lastPathSegment)
+
         }
     }
 
