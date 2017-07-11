@@ -1,10 +1,17 @@
 package com.kmather.kmath.imagesearch
 
+import android.Manifest
+import android.app.Activity
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.support.design.widget.Snackbar
+import android.support.v4.content.FileProvider
+import android.support.v7.app.AlertDialog
 import android.support.v7.app.AppCompatActivity
 import android.util.Log
 import android.view.Menu
@@ -17,9 +24,15 @@ import com.google.firebase.storage.UploadTask
 
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     var mStorageRef: StorageReference? = null
+    val GALLERY_PERMISSIONS_REQUEST = 0
+    val GALLERY_IMAGE_REQUEST = 1
+    val CAMERA_PERMISSIONS_REQUEST = 2
+    val CAMERA_IMAGE_REQUEST = 3
+    val FILE_NAME = "temp.jpg"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,8 +43,21 @@ class MainActivity : AppCompatActivity() {
 
 
         fab.setOnClickListener { view ->
-            var imgPath : String = "10900005_10152564129286536_2275526967453916269_o.jpg"
-            searchImage(imgPath)
+
+            val builder = AlertDialog.Builder(this@MainActivity)
+            builder
+                    .setMessage(R.string.dialog_select_prompt)
+                    .setPositiveButton(R.string.dialog_select_gallery, DialogInterface.OnClickListener { dialog, which ->
+                        startGalleryChooser()
+                    })
+                    .setNegativeButton(R.string.dialog_select_camera, DialogInterface.OnClickListener { dialog, which ->
+                        startCamera()
+                    })
+            builder.create().show()
+
+
+            //var imgPath : String = "10900005_10152564129286536_2275526967453916269_o.jpg"
+            //searchImage(imgPath)
             //Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
             //        .setAction("Action", null).show()
         }
@@ -56,7 +82,7 @@ class MainActivity : AppCompatActivity() {
     fun searchImage(imgPath : String) {
         var base_url : String  = "https://www.google.com/searchbyimage?site=search&sa=X&image_url="
         base_url += "http://storage.googleapis.com/avid-toolbox-5658/"
-        Log.i("KEVIN", base_url + imgPath)
+
         val uri = Uri.parse(base_url + imgPath)
         var i : Intent = Intent(Intent.ACTION_VIEW, uri)
         startActivity(i);
@@ -81,5 +107,60 @@ class MainActivity : AppCompatActivity() {
                     }
                 });
 
+    }
+
+    fun startGalleryChooser() {
+        if (PermissionUtils.requestPermission(this, GALLERY_PERMISSIONS_REQUEST, Manifest.permission.READ_EXTERNAL_STORAGE)) {
+            val intent = Intent()
+            intent.type = "image/*"
+            intent.action = Intent.ACTION_GET_CONTENT
+            startActivityForResult(Intent.createChooser(intent, "Select a photo"),
+                    GALLERY_IMAGE_REQUEST)
+        }
+
+
+    }
+
+    fun startCamera() {
+        if (PermissionUtils.requestPermission(
+                this,
+                CAMERA_PERMISSIONS_REQUEST,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.CAMERA)) {
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            val photoUri = FileProvider.getUriForFile(this, applicationContext.packageName + ".provider", getCameraFile())
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivityForResult(intent, CAMERA_IMAGE_REQUEST)
+        }
+    }
+
+    fun getCameraFile(): File {
+        val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        return File(dir, FILE_NAME)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == GALLERY_IMAGE_REQUEST && resultCode == Activity.RESULT_OK && data != null) {
+            //uploadImage(data.data)
+        } else if (requestCode == CAMERA_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
+            val photoUri = FileProvider.getUriForFile(this, applicationContext.packageName + ".provider", getCameraFile())
+            //uploadImage(photoUri)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+            requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            CAMERA_PERMISSIONS_REQUEST -> if (PermissionUtils.permissionGranted(requestCode, CAMERA_PERMISSIONS_REQUEST, grantResults)) {
+                startCamera()
+            }
+            GALLERY_PERMISSIONS_REQUEST -> if (PermissionUtils.permissionGranted(requestCode, GALLERY_PERMISSIONS_REQUEST, grantResults)) {
+                startGalleryChooser()
+            }
+        }
     }
 }
